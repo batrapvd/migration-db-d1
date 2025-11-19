@@ -17,7 +17,19 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const D1_DATABASE_ID = process.env.D1_DATABASE_ID;
-const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '100', 10);
+
+// D1/SQLite has a limit on SQL variables (SQLITE_MAX_VARIABLE_NUMBER)
+// camera_locations has 6 columns, so max batch = MAX_VARIABLES / 6
+const COLUMNS_COUNT = 6; // location_id, longitude, latitude, altitude, created_at, updated_at
+const MAX_SQL_VARIABLES = 400; // Conservative limit for Cloudflare D1
+const MAX_BATCH_SIZE = Math.floor(MAX_SQL_VARIABLES / COLUMNS_COUNT);
+const REQUESTED_BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50', 10);
+const BATCH_SIZE = Math.min(REQUESTED_BATCH_SIZE, MAX_BATCH_SIZE);
+
+if (REQUESTED_BATCH_SIZE > MAX_BATCH_SIZE) {
+  console.log(`⚠️  Requested batch size (${REQUESTED_BATCH_SIZE}) exceeds SQLite variable limit.`);
+  console.log(`   Using maximum safe batch size: ${MAX_BATCH_SIZE}\n`);
+}
 
 // Validate environment variables
 if (!DATABASE_URL || !CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID || !D1_DATABASE_ID) {

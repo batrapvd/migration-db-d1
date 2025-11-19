@@ -28,6 +28,6 @@
   },
   "devDependencies": {
     "dotenv": "^16.3.1",
-    "wrangler": "^3.22.1"
+    "wrangler": "^4.49.0"
   }
 }

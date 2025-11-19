@@ -42,28 +42,56 @@ if (!DATABASE_URL || !CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID || !D1_DATA
   process.exit(1);
 }
 
-async function executeD1SQL(sql, params = []) {
+async function executeD1SQL(sql, params = [], retries = 3) {
   const url = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      sql: sql,
-      params: params
-    })
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sql: sql,
+          params: params
+        })
+      });
 
-  const result = await response.json();
+      // Check if response is OK
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`D1 API HTTP ${response.status}: ${text.substring(0, 200)}`);
+      }
 
-  if (!result.success) {
-    throw new Error(`D1 API Error: ${JSON.stringify(result.errors)}`);
+      // Try to parse JSON
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        const text = await response.text();
+        throw new Error(`D1 API returned non-JSON response: ${text.substring(0, 200)}`);
+      }
+
+      if (!result.success) {
+        throw new Error(`D1 API Error: ${JSON.stringify(result.errors)}`);
+      }
+
+      return result;
+    } catch (error) {
+      // If this is the last retry, throw the error
+      if (attempt === retries) {
+        throw error;
+      }
+
+      // Calculate exponential backoff delay
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+      console.log(`   ⚠️  Attempt ${attempt} failed: ${error.message}`);
+      console.log(`   ⏳ Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
-
-  return result;
 }
 
 async function executeBatchInsert(rows) {
@@ -173,6 +201,11 @@ async function migrateData() {
         } catch (error) {
           console.error(`   ❌ Batch failed:`, error.message);
           throw error;
+        }
+
+        // Add delay to avoid rate limiting (only between batches, not after the last one)
+        if (i < batches - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
 

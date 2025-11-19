@@ -1,0 +1,198 @@
+name: Migration with Wrangler CLI (Option 2)
+
+on:
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      apply_schema:
+        description: 'Apply schema migrations using Wrangler'
+        required: true
+        type: boolean
+        default: true
+      migrate_data:
+        description: 'Migrate data after schema setup'
+        required: true
+        type: boolean
+        default: true
+      table_name:
+        description: 'Table to migrate (coordinate_speed_new, camera_locations, or all)'
+        required: false
+        type: choice
+        options:
+          - coordinate_speed_new
+          - camera_locations
+          - all
+        default: 'coordinate_speed_new'
+      checkpoint_size:
+        description: 'Records per checkpoint (default: 50000)'
+        required: false
+        type: string
+        default: '50000'
+      use_remote:
+        description: 'Use remote D1 database (--remote flag)'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  migrate-wrangler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: |
+          # Update wrangler.toml with actual database ID
+          sed -i "s/your-d1-database-id/$D1_DATABASE_ID/g" wrangler.toml
+
+          echo "📝 Wrangler configuration:"
+          cat wrangler.toml
+
+      - name: Apply Schema Migrations
+        if: ${{ github.event.inputs.apply_schema == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "🗄️  Applying schema migrations to D1 database..."
+          echo ""
+
+          if [ "${{ github.event.inputs.use_remote }}" == "true" ]; then
+            echo "🌐 Using remote D1 database (--remote)"
+            npx wrangler d1 migrations apply speedlimit --remote
+          else
+            echo "🏠 Using local D1 database"
+            npx wrangler d1 migrations apply speedlimit
+          fi
+
+          echo ""
+          echo "✅ Schema migrations applied successfully"
+
+      - name: List Applied Migrations
+        if: ${{ github.event.inputs.apply_schema == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "📋 Listing applied migrations..."
+
+          if [ "${{ github.event.inputs.use_remote }}" == "true" ]; then
+            npx wrangler d1 migrations list speedlimit --remote
+          else
+            npx wrangler d1 migrations list speedlimit
+          fi
+
+      - name: Validate Cloudflare credentials
+        if: ${{ github.event.inputs.migrate_data == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: npm run validate
+
+      - name: Migrate Data - coordinate_speed_new
+        if: ${{ github.event.inputs.migrate_data == 'true' && (github.event.inputs.table_name == 'coordinate_speed_new' || github.event.inputs.table_name == 'all') }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: coordinate_speed_new
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+          RESUME_MODE: true
+        run: |
+          echo "📊 Migrating coordinate_speed_new table..."
+          echo "💾 Checkpoint size: ${CHECKPOINT_SIZE}"
+          echo ""
+          npm run migrate:resume
+
+      - name: Migrate Data - camera_locations
+        if: ${{ github.event.inputs.migrate_data == 'true' && (github.event.inputs.table_name == 'camera_locations' || github.event.inputs.table_name == 'all') }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: camera_locations
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+          RESUME_MODE: true
+        run: |
+          echo "📊 Migrating camera_locations table..."
+          echo "💾 Checkpoint size: ${CHECKPOINT_SIZE}"
+          echo ""
+          npm run migrate:resume:camera
+
+      - name: Migration Summary
+        if: always()
+        run: |
+          echo "## Wrangler Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🕐 **Completed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event.inputs.apply_schema }}" == "true" ]; then
+            echo "### Schema Migration" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Applied using Wrangler CLI" >> $GITHUB_STEP_SUMMARY
+            echo "- Database: \`speedlimit\`" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event.inputs.use_remote }}" == "true" ]; then
+              echo "- Mode: Remote (--remote)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- Mode: Local" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ github.event.inputs.migrate_data }}" == "true" ]; then
+            echo "### Data Migration" >> $GITHUB_STEP_SUMMARY
+            echo "- Table: \`${{ github.event.inputs.table_name }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Checkpoint Size: \`${{ github.event.inputs.checkpoint_size || '50000' }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Resume Mode: Enabled" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### Wrangler CLI Approach (Option 2)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Advantages:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 📝 Versioned migrations with rollback support" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔄 Migration history tracking via \`d1_migrations\` table" >> $GITHUB_STEP_SUMMARY
+          echo "- 🛠️ Official Cloudflare tooling with better CLI experience" >> $GITHUB_STEP_SUMMARY
+          echo "- 📂 Organized migration files in \`migrations/\` folder" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Apply schema migrations using Wrangler" >> $GITHUB_STEP_SUMMARY
+          echo "2. Migrate data using resumable migration scripts" >> $GITHUB_STEP_SUMMARY
+          echo "3. Track progress via \`migration_checkpoints\` table" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ Migration completed successfully"
+          if [ "${{ github.event.inputs.migrate_data }}" == "true" ]; then
+            echo "💡 Check migration_checkpoints table for detailed progress"
+          fi
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Migration encountered an error"
+          echo "💡 Check logs above for details"
+          if [ "${{ github.event.inputs.migrate_data }}" == "true" ]; then
+            echo "💡 Check migration_checkpoints table for last successful checkpoint"
+            echo "💡 Re-run workflow to resume from last checkpoint"
+          fi

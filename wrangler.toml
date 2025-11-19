@@ -5,7 +5,7 @@ compatibility_date = "2024-01-01"
 # D1 Database Bindings
 [[d1_databases]]
 binding = "DB"
-database_name = "database-speedlimit"
+database_name = "speedlimit"
 database_id = "a444d3c5-2c62-495b-b928-e70ab478238e"  # Replace with actual D1_DATABASE_ID
 migrations_dir = "migrations"
 migrations_table = "d1_migrations"

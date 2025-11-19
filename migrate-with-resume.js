@@ -128,9 +128,47 @@ async function getLastCompletedCheckpoint(tableName) {
   return result.result[0].results[0] || null;
 }
 
+// Ensure migration_checkpoints table exists
+async function ensureCheckpointsTableExists() {
+  try {
+    // Try to query the table
+    await executeD1SQL(`SELECT COUNT(*) FROM migration_checkpoints LIMIT 1`);
+  } catch (error) {
+    // Table doesn't exist, create it
+    if (error.message.includes('no such table')) {
+      console.log(`   📋 Creating migration_checkpoints table...`);
+
+      await executeD1SQL(`
+        CREATE TABLE migration_checkpoints (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          table_name TEXT NOT NULL,
+          start_id INTEGER NOT NULL,
+          end_id INTEGER NOT NULL,
+          records_processed INTEGER DEFAULT 0,
+          status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
+          error_message TEXT,
+          started_at TEXT,
+          completed_at TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        )
+      `);
+
+      await executeD1SQL(`CREATE INDEX idx_checkpoint_table_status ON migration_checkpoints(table_name, status)`);
+      await executeD1SQL(`CREATE INDEX idx_checkpoint_table_range ON migration_checkpoints(table_name, start_id, end_id)`);
+
+      console.log(`   ✅ Created migration_checkpoints table with indexes`);
+    } else {
+      throw error;
+    }
+  }
+}
+
 // Initialize checkpoints for a table
 async function initializeCheckpoints(tableName, totalRecords, minId, maxId) {
   console.log(`\n📋 Initializing checkpoints for ${tableName}...`);
+
+  // Ensure checkpoints table exists
+  await ensureCheckpointsTableExists();
 
   // Check if checkpoints already exist
   const existing = await executeD1SQL(
@@ -271,6 +309,51 @@ async function processCheckpoint(pgClient, checkpoint) {
   }
 }
 
+// Ensure target table exists in D1
+async function ensureTargetTableExists(tableName) {
+  try {
+    await executeD1SQL(`SELECT COUNT(*) FROM ${tableName} LIMIT 1`);
+  } catch (error) {
+    if (error.message.includes('no such table')) {
+      console.log(`   📋 Creating ${tableName} table in D1...`);
+
+      if (tableName === 'coordinate_speed_new') {
+        await executeD1SQL(`
+          CREATE TABLE coordinate_speed_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            api_speed_limit REAL,
+            bearing REAL,
+            display_name TEXT
+          )
+        `);
+        await executeD1SQL(`CREATE INDEX idx_coordinate_latitude_longitude ON coordinate_speed_new(latitude, longitude)`);
+        await executeD1SQL(`CREATE INDEX idx_coordinate_display_name ON coordinate_speed_new(display_name)`);
+      } else if (tableName === 'camera_locations') {
+        await executeD1SQL(`
+          CREATE TABLE camera_locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            location_id TEXT,
+            longitude REAL NOT NULL,
+            latitude REAL NOT NULL,
+            altitude REAL,
+            created_at TEXT,
+            updated_at TEXT
+          )
+        `);
+        await executeD1SQL(`CREATE INDEX idx_camera_location_id ON camera_locations(location_id)`);
+        await executeD1SQL(`CREATE INDEX idx_camera_latitude_longitude ON camera_locations(latitude, longitude)`);
+        await executeD1SQL(`CREATE INDEX idx_camera_created_at ON camera_locations(created_at)`);
+      }
+
+      console.log(`   ✅ Created ${tableName} table with indexes`);
+    } else {
+      throw error;
+    }
+  }
+}
+
 // Main migration function
 async function migrateData() {
   const pgClient = new Client({ connectionString: DATABASE_URL });
@@ -283,6 +366,11 @@ async function migrateData() {
     console.log(`  Checkpoint Size: ${CHECKPOINT_SIZE} records`);
     console.log(`  D1 Batch Size: ${BATCH_SIZE} rows`);
     console.log(`  Resume Mode: ${RESUME_MODE ? 'Enabled' : 'Disabled'}\n`);
+
+    // Ensure target table exists in D1
+    console.log('🔍 Checking D1 schema...');
+    await ensureTargetTableExists(TABLE_NAME);
+    console.log('✅ D1 schema ready\n');
 
     // Connect to PostgreSQL
     console.log('🔌 Connecting to PostgreSQL...');

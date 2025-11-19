@@ -1,0 +1,28 @@
+{
+  "name": "migration-db-d1",
+  "version": "1.0.0",
+  "description": "Migration script from PostgreSQL to Cloudflare D1",
+  "main": "migrate.js",
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.js",
+    "migrate:camera": "node migrate-camera-locations.js",
+    "migrate:all": "npm run migrate && npm run migrate:camera",
+    "setup-db": "node setup-d1-schema.js"
+  },
+  "keywords": [
+    "postgresql",
+    "cloudflare",
+    "d1",
+    "migration"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.1"
+  }
+}

@@ -1,0 +1,62 @@
+name: Migrate Camera Locations to D1
+
+on:
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      setup_schema:
+        description: 'Setup D1 schema before migration'
+        required: false
+        type: boolean
+        default: false
+
+  # Optional: Schedule automatic migration (uncomment to enable)
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Run every Sunday at midnight UTC
+
+jobs:
+  migrate-camera:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup D1 Schema (optional)
+        if: github.event.inputs.setup_schema == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: npm run setup-db
+
+      - name: Run Camera Locations Migration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          BATCH_SIZE: ${{ vars.BATCH_SIZE || '100' }}
+        run: npm run migrate:camera
+
+      - name: Migration Summary
+        if: always()
+        run: |
+          echo "## Camera Locations Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Camera locations migration workflow completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- D1 Database ID: \`${{ secrets.D1_DATABASE_ID }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Batch Size: \`${{ vars.BATCH_SIZE || '100' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Table Migrated:** camera_locations" >> $GITHUB_STEP_SUMMARY

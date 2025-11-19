@@ -38,3 +38,26 @@ CREATE TABLE camera_locations (
 CREATE INDEX idx_camera_location_id ON camera_locations(location_id);
 CREATE INDEX idx_camera_latitude_longitude ON camera_locations(latitude, longitude);
 CREATE INDEX idx_camera_created_at ON camera_locations(created_at);
+
+-- ========================================
+-- Table: migration_checkpoints
+-- ========================================
+-- Tracks migration progress for resume capability
+DROP TABLE IF EXISTS migration_checkpoints;
+
+CREATE TABLE migration_checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    start_id INTEGER NOT NULL,
+    end_id INTEGER NOT NULL,
+    records_processed INTEGER DEFAULT 0,
+    status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
+    error_message TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Create indexes for quick lookups
+CREATE INDEX idx_checkpoint_table_status ON migration_checkpoints(table_name, status);
+CREATE INDEX idx_checkpoint_table_range ON migration_checkpoints(table_name, start_id, end_id);

@@ -9,6 +9,9 @@
     "migrate": "node migrate.js",
     "migrate:camera": "node migrate-camera-locations.js",
     "migrate:all": "npm run migrate && npm run migrate:camera",
+    "migrate:resume": "TABLE_NAME=coordinate_speed_new node migrate-with-resume.js",
+    "migrate:resume:camera": "TABLE_NAME=camera_locations node migrate-with-resume.js",
+    "migrate:resume:all": "npm run migrate:resume && npm run migrate:resume:camera",
     "setup-db": "node setup-d1-schema.js"
   },
   "keywords": [

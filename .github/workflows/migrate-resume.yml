@@ -1,0 +1,110 @@
+name: Migrate with Resume Capability
+
+on:
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      setup_schema:
+        description: 'Setup D1 schema before migration'
+        required: false
+        type: boolean
+        default: false
+      checkpoint_size:
+        description: 'Records per checkpoint (default: 50000)'
+        required: false
+        type: string
+        default: '50000'
+      table_name:
+        description: 'Table to migrate (coordinate_speed_new, camera_locations, or all)'
+        required: false
+        type: choice
+        options:
+          - coordinate_speed_new
+          - camera_locations
+          - all
+        default: 'coordinate_speed_new'
+
+  # Optional: Schedule automatic migration (uncomment to enable)
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Run every Sunday at midnight UTC
+
+jobs:
+  migrate-resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: npm run validate
+
+      - name: Setup D1 Schema (optional)
+        if: github.event.inputs.setup_schema == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: npm run setup-db
+
+      - name: Run Migration - coordinate_speed_new
+        if: github.event.inputs.table_name == 'coordinate_speed_new' || github.event.inputs.table_name == 'all'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: coordinate_speed_new
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+        run: |
+          echo "📊 Starting resumable migration: coordinate_speed_new"
+          npm run migrate:resume
+
+      - name: Run Migration - camera_locations
+        if: github.event.inputs.table_name == 'camera_locations' || github.event.inputs.table_name == 'all'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: camera_locations
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+        run: |
+          echo "📊 Starting resumable migration: camera_locations"
+          npm run migrate:resume:camera
+
+      - name: Migration Summary
+        if: always()
+        run: |
+          echo "## Resumable Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Migration workflow completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Table: \`${{ github.event.inputs.table_name || 'coordinate_speed_new' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- D1 Database ID: \`${{ secrets.D1_DATABASE_ID }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Checkpoint Size: \`${{ github.event.inputs.checkpoint_size || '50000' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Features:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Resume capability enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ID-based pagination for optimal performance" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Checkpoint tracking in migration_checkpoints table" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Automatic retry on failure" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** If this workflow times out or fails, simply re-run it to resume from the last completed checkpoint." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Monitoring:** Query \`migration_checkpoints\` table in D1 to check progress." >> $GITHUB_STEP_SUMMARY

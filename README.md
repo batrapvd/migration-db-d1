@@ -43,10 +43,12 @@ export CLOUDFLARE_ACCOUNT_ID="your_account_id"
 export D1_DATABASE_ID="your_database_id"
 ```
 
-### Setup Database Schema
+### Setup Database Schema (Optional)
+
+The migration scripts automatically create required tables if they don't exist. You can optionally run setup manually:
 
 ```bash
-# Create tables and indexes in D1
+# Create tables and indexes in D1 (optional - auto-created during migration)
 npm run setup-db
 ```
 

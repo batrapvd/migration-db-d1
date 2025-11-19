@@ -247,6 +247,15 @@ async function processCheckpoint(pgClient, checkpoint) {
   try {
     await updateCheckpointStatus(checkpointId, 'in_progress', 0);
 
+    // Ensure PostgreSQL connection is alive
+    try {
+      await pgClient.query('SELECT 1');
+    } catch (connError) {
+      console.log(`   ⚠️  PostgreSQL connection lost, reconnecting...`);
+      await pgClient.connect();
+      console.log(`   ✅ Reconnected to PostgreSQL`);
+    }
+
     // Fetch data using ID range (much faster than OFFSET for large datasets)
     const columns = TABLE_NAME === 'coordinate_speed_new'
       ? 'id, latitude, longitude, api_speed_limit, bearing, display_name'
@@ -291,6 +300,15 @@ async function processCheckpoint(pgClient, checkpoint) {
 
       const progress = ((recordsProcessed / processedRows.length) * 100).toFixed(1);
       console.log(`   Batch ${i + 1}/${batches}: Inserted ${batch.length} records (${progress}% of checkpoint)`);
+
+      // Periodic PostgreSQL keepalive (every 100 batches = ~20 seconds)
+      if ((i + 1) % 100 === 0) {
+        try {
+          await pgClient.query('SELECT 1');
+        } catch (pingError) {
+          // Ignore keepalive errors, will be caught at next checkpoint
+        }
+      }
 
       // Rate limiting
       if (i < batches - 1) {
@@ -356,7 +374,11 @@ async function ensureTargetTableExists(tableName) {
 
 // Main migration function
 async function migrateData() {
-  const pgClient = new Client({ connectionString: DATABASE_URL });
+  const pgClient = new Client({
+    connectionString: DATABASE_URL,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000, // Start keepalive after 10s
+  });
 
   try {
     console.log('🚀 Starting resumable migration from PostgreSQL to Cloudflare D1\n');
@@ -372,10 +394,16 @@ async function migrateData() {
     await ensureTargetTableExists(TABLE_NAME);
     console.log('✅ D1 schema ready\n');
 
-    // Connect to PostgreSQL
-    console.log('🔌 Connecting to PostgreSQL...');
+    // Connect to PostgreSQL with keepalive
+    console.log('🔌 Connecting to PostgreSQL (with keepalive)...');
     await pgClient.connect();
     console.log('✅ Connected to PostgreSQL');
+
+    // Handle PostgreSQL connection errors
+    pgClient.on('error', (err) => {
+      console.error('⚠️  PostgreSQL connection error:', err.message);
+      // Don't throw, let next checkpoint handle reconnection
+    });
 
     // Get table statistics
     console.log(`\n📊 Analyzing ${TABLE_NAME}...`);

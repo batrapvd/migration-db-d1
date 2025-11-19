@@ -5,6 +5,7 @@
   "main": "migrate.js",
   "type": "module",
   "scripts": {
+    "validate": "node validate-credentials.js",
     "migrate": "node migrate.js",
     "migrate:camera": "node migrate-camera-locations.js",
     "migrate:all": "npm run migrate && npm run migrate:camera",

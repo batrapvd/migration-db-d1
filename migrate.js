@@ -19,11 +19,12 @@ const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const D1_DATABASE_ID = process.env.D1_DATABASE_ID;
 
 // D1/SQLite has a limit on SQL variables (SQLITE_MAX_VARIABLE_NUMBER)
+// Cloudflare D1 appears to have a strict limit of ~100 variables per query
 // coordinate_speed_new has 5 columns, so max batch = MAX_VARIABLES / 5
 const COLUMNS_COUNT = 5; // latitude, longitude, api_speed_limit, bearing, display_name
-const MAX_SQL_VARIABLES = 400; // Conservative limit for Cloudflare D1
-const MAX_BATCH_SIZE = Math.floor(MAX_SQL_VARIABLES / COLUMNS_COUNT);
-const REQUESTED_BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50', 10);
+const MAX_SQL_VARIABLES = 99; // Cloudflare D1's actual limit (much lower than standard SQLite)
+const MAX_BATCH_SIZE = Math.floor(MAX_SQL_VARIABLES / COLUMNS_COUNT); // = 19 rows max
+const REQUESTED_BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '19', 10);
 const BATCH_SIZE = Math.min(REQUESTED_BATCH_SIZE, MAX_BATCH_SIZE);
 
 if (REQUESTED_BATCH_SIZE > MAX_BATCH_SIZE) {

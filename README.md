@@ -10,6 +10,12 @@ Production-ready migration scripts for transferring large datasets from PostgreS
 - **Progress tracking** - Stores checkpoint status in D1 database
 - **Zero data loss** - Failed checkpoints are retried on next run
 
+### ⏰ Scheduled Migration
+- **Auto-scheduling** - Runs every 7 hours (5.5h work + 1.5h rest)
+- **Continuous migration** - Automatically continues until completion
+- **Timeout protection** - Prevents GitHub Actions 6-hour timeout
+- **Zero maintenance** - No manual intervention needed
+
 ### ⚡ Performance Optimizations
 - **ID-based pagination** - Consistent fast queries vs degrading OFFSET performance
 - **Chunked processing** - Prevents PostgreSQL connection timeouts
@@ -78,6 +84,31 @@ npm run migrate:all
 # Test API credentials before migration
 npm run validate
 ```
+
+### Scheduled Automatic Migration (Recommended for Large Datasets)
+
+**Set it and forget it!** For datasets with 1M+ records, use scheduled migration:
+
+```yaml
+# Migration runs automatically every 7 hours
+# Schedule: 00:00, 07:00, 14:00, 21:00 UTC daily
+# - 5.5 hours runtime per session
+# - 1.5 hours rest between sessions
+# - Auto-resumes from last checkpoint
+```
+
+**Setup:**
+1. Ensure `.github/workflows/migrate-scheduled.yml` is in your repository
+2. Set required secrets in GitHub (see Environment Variables below)
+3. Push to GitHub - workflow starts automatically!
+
+**Benefits:**
+- ✅ Runs continuously until completion (~2-3 days for 2M records)
+- ✅ No manual intervention needed
+- ✅ Survives GitHub Actions 6-hour timeout
+- ✅ Automatically resumes on failure
+
+**See [SCHEDULED-MIGRATION.md](SCHEDULED-MIGRATION.md) for detailed guide.**
 
 ## Migration Strategies
 

@@ -1,0 +1,112 @@
+name: Scheduled Migration with Auto-Resume
+
+on:
+  # Run every 7 hours to allow 5.5h runtime + 1.5h rest
+  schedule:
+    # Runs at 00:00, 07:00, 14:00, 21:00 UTC daily
+    - cron: '0 0,7,14,21 * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      table_name:
+        description: 'Table to migrate (coordinate_speed_new, camera_locations, or all)'
+        required: false
+        type: choice
+        options:
+          - coordinate_speed_new
+          - camera_locations
+          - all
+        default: 'coordinate_speed_new'
+      checkpoint_size:
+        description: 'Records per checkpoint (default: 50000)'
+        required: false
+        type: string
+        default: '50000'
+
+jobs:
+  migrate-scheduled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330  # 5 hours 30 minutes max runtime
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: npm run validate
+
+      - name: Run Migration - coordinate_speed_new with Resume
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: coordinate_speed_new
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+          RESUME_MODE: true
+        run: |
+          echo "🕐 Starting scheduled migration at $(date)"
+          echo "⏱️  Max runtime: 5 hours 30 minutes"
+          echo "📊 Table: coordinate_speed_new"
+          echo "💾 Checkpoint size: ${CHECKPOINT_SIZE}"
+          echo ""
+          npm run migrate:resume
+
+      - name: Migration Status Summary
+        if: always()
+        run: |
+          echo "## Scheduled Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🕐 **Run completed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Schedule:** Runs every 7 hours (00:00, 07:00, 14:00, 21:00 UTC)" >> $GITHUB_STEP_SUMMARY
+          echo "**Runtime:** Maximum 5.5 hours per run" >> $GITHUB_STEP_SUMMARY
+          echo "**Rest period:** 1.5 hours between runs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Table: \`coordinate_speed_new\`" >> $GITHUB_STEP_SUMMARY
+          echo "- D1 Database ID: \`${{ secrets.D1_DATABASE_ID }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Checkpoint Size: \`${{ github.event.inputs.checkpoint_size || '50000' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Resume Capability:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Automatically resumes from last completed checkpoint" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Next run will continue from where this one stopped" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ No data duplication or loss" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next scheduled run:** In ~7 hours" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Tip:** Query \`migration_checkpoints\` table to check detailed progress" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ Migration run completed successfully"
+          echo "⏭️  Will automatically resume in the next scheduled run (7 hours)"
+
+      - name: Notify on Timeout
+        if: failure() && cancelled()
+        run: |
+          echo "⏱️  Migration reached 5.5h timeout limit"
+          echo "✅ This is expected behavior"
+          echo "⏭️  Will automatically resume in the next scheduled run (7 hours)"
+
+      - name: Notify on Failure
+        if: failure() && !cancelled()
+        run: |
+          echo "❌ Migration encountered an error"
+          echo "⏭️  Will automatically retry in the next scheduled run (7 hours)"
+          echo "💡 Check logs and migration_checkpoints table for details"

@@ -109,29 +109,6 @@ async function migrateData() {
       return;
     }
 
-    // Fetch all data from PostgreSQL
-    console.log('\n📥 Fetching data from PostgreSQL...');
-    const result = await pgClient.query(`
-      SELECT
-        location_id,
-        longitude,
-        latitude,
-        altitude,
-        created_at,
-        updated_at
-      FROM camera_locations
-      ORDER BY id
-    `);
-
-    console.log(`✅ Fetched ${result.rows.length} records`);
-
-    // Convert timestamps to ISO strings
-    const processedRows = result.rows.map(row => ({
-      ...row,
-      created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
-      updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null
-    }));
-
     // Clear existing data in D1 (optional - comment out if you want to append)
     console.log('\n🗑️  Clearing existing data in D1...');
     try {
@@ -141,29 +118,65 @@ async function migrateData() {
       console.log('⚠️  Could not clear data (table might not exist yet):', error.message);
     }
 
-    // Insert data in batches to D1
-    console.log(`\n📤 Inserting data to D1 in batches of ${BATCH_SIZE}...`);
-    const batches = Math.ceil(processedRows.length / BATCH_SIZE);
+    // Process data in chunks to avoid connection timeouts
+    const CHUNK_SIZE = 10000; // Fetch 10k records at a time from PostgreSQL
+    const totalChunks = Math.ceil(totalRecords / CHUNK_SIZE);
+    let recordsProcessed = 0;
 
-    for (let i = 0; i < batches; i++) {
-      const start = i * BATCH_SIZE;
-      const end = Math.min(start + BATCH_SIZE, processedRows.length);
-      const batch = processedRows.slice(start, end);
+    console.log(`\n📤 Migrating data in chunks of ${CHUNK_SIZE} records...`);
+    console.log(`   Total chunks: ${totalChunks}`);
+    console.log(`   D1 batch size: ${BATCH_SIZE} rows per insert\n`);
 
-      console.log(`   Batch ${i + 1}/${batches}: Inserting records ${start + 1}-${end}...`);
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      const offset = chunkIndex * CHUNK_SIZE;
 
-      try {
-        await executeBatchInsert(batch);
-        console.log(`   ✅ Batch ${i + 1} completed`);
-      } catch (error) {
-        console.error(`   ❌ Batch ${i + 1} failed:`, error.message);
-        throw error;
+      // Fetch chunk from PostgreSQL
+      console.log(`\n📥 Chunk ${chunkIndex + 1}/${totalChunks}: Fetching records ${offset + 1}-${Math.min(offset + CHUNK_SIZE, totalRecords)}...`);
+
+      const result = await pgClient.query(`
+        SELECT
+          location_id,
+          longitude,
+          latitude,
+          altitude,
+          created_at,
+          updated_at
+        FROM camera_locations
+        ORDER BY id
+        LIMIT $1 OFFSET $2
+      `, [CHUNK_SIZE, offset]);
+
+      console.log(`   ✅ Fetched ${result.rows.length} records`);
+
+      // Convert timestamps to ISO strings
+      const processedRows = result.rows.map(row => ({
+        ...row,
+        created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+        updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null
+      }));
+
+      // Insert this chunk to D1 in batches
+      const batches = Math.ceil(processedRows.length / BATCH_SIZE);
+
+      for (let i = 0; i < batches; i++) {
+        const start = i * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, processedRows.length);
+        const batch = processedRows.slice(start, end);
+
+        recordsProcessed += batch.length;
+        const overallProgress = ((recordsProcessed / totalRecords) * 100).toFixed(1);
+
+        console.log(`   Batch ${i + 1}/${batches}: Inserting ${batch.length} records (${overallProgress}% overall)...`);
+
+        try {
+          await executeBatchInsert(batch);
+        } catch (error) {
+          console.error(`   ❌ Batch failed:`, error.message);
+          throw error;
+        }
       }
 
-      // Small delay to avoid rate limiting
-      if (i < batches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      console.log(`   ✅ Chunk ${chunkIndex + 1}/${totalChunks} completed (${recordsProcessed}/${totalRecords} records)`);
     }
 
     // Verify migration

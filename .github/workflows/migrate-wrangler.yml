@@ -1,6 +1,11 @@
 name: Migration with Wrangler CLI (Option 2)
 
 on:
+  # Run every 7 hours to allow 5.5h runtime + 1.5h rest
+  schedule:
+    # Runs at 00:00, 07:00, 14:00, 21:00 UTC daily
+    - cron: '0 0,7,14,21 * * *'
+
   # Allow manual trigger
   workflow_dispatch:
     inputs:
@@ -24,10 +29,10 @@ on:
           - all
         default: 'coordinate_speed_new'
       checkpoint_size:
-        description: 'Records per checkpoint (default: 50000)'
+        description: 'Records per checkpoint (default: 100000)'
         required: false
         type: string
-        default: '50000'
+        default: '100000'
       use_remote:
         description: 'Use remote D1 database (--remote flag)'
         required: true
@@ -114,7 +119,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           TABLE_NAME: coordinate_speed_new
-          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '100000' }}
           RESUME_MODE: true
         run: |
           echo "📊 Migrating coordinate_speed_new table..."
@@ -130,7 +135,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           TABLE_NAME: camera_locations
-          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '50000' }}
+          CHECKPOINT_SIZE: ${{ github.event.inputs.checkpoint_size || '100000' }}
           RESUME_MODE: true
         run: |
           echo "📊 Migrating camera_locations table..."

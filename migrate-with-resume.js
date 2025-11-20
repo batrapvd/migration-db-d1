@@ -21,10 +21,10 @@ const TABLE_NAME = process.env.TABLE_NAME || 'coordinate_speed_new';
 
 // Configuration
 const COLUMNS_COUNT = TABLE_NAME === 'coordinate_speed_new' ? 5 : 6;
-const MAX_SQL_VARIABLES = 99;
+const MAX_SQL_VARIABLES = 100; // Cloudflare D1's limit (maximum bound parameters per query)
 const MAX_BATCH_SIZE = Math.floor(MAX_SQL_VARIABLES / COLUMNS_COUNT);
 const BATCH_SIZE = Math.min(parseInt(process.env.BATCH_SIZE || MAX_BATCH_SIZE.toString(), 10), MAX_BATCH_SIZE);
-const CHECKPOINT_SIZE = parseInt(process.env.CHECKPOINT_SIZE || '50000', 10); // 50k records per checkpoint
+const CHECKPOINT_SIZE = parseInt(process.env.CHECKPOINT_SIZE || '100000', 10); // 100k records per checkpoint (increased from 50k)
 const RESUME_MODE = process.env.RESUME_MODE !== 'false'; // Default: true
 
 // Validate environment variables

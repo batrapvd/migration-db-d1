@@ -1,0 +1,97 @@
+name: 🧹 Cleanup D1 Database (One-time)
+
+on:
+  # Manual trigger only - no automatic schedule
+  workflow_dispatch:
+    inputs:
+      table_name:
+        description: 'Table to cleanup (coordinate_speed_new, camera_locations, or all)'
+        required: true
+        type: choice
+        options:
+          - coordinate_speed_new
+          - camera_locations
+          - all
+        default: 'coordinate_speed_new'
+      confirm_cleanup:
+        description: '⚠️ Type YES to confirm deletion of all data and checkpoints'
+        required: true
+        type: string
+
+jobs:
+  cleanup-d1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_cleanup }}" != "YES" ]; then
+            echo "❌ Cleanup cancelled - confirmation not provided"
+            echo "You must type 'YES' to confirm cleanup"
+            exit 1
+          fi
+          echo "✅ Confirmation received"
+
+      - name: Cleanup coordinate_speed_new
+        if: ${{ github.event.inputs.table_name == 'coordinate_speed_new' || github.event.inputs.table_name == 'all' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: coordinate_speed_new
+        run: |
+          echo "🧹 Cleaning up coordinate_speed_new..."
+          npm run cleanup
+
+      - name: Cleanup camera_locations
+        if: ${{ github.event.inputs.table_name == 'camera_locations' || github.event.inputs.table_name == 'all' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: camera_locations
+        run: |
+          echo "🧹 Cleaning up camera_locations..."
+          npm run cleanup:camera
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## D1 Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🕐 **Completed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tables cleaned:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ github.event.inputs.table_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Actions performed:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗑️ Deleted all records from table(s)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗑️ Deleted all migration checkpoints" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next step:**" >> $GITHUB_STEP_SUMMARY
+          echo "Run the 'Migration with Wrangler CLI' workflow to start fresh migration" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ Cleanup completed successfully"
+          echo "💡 You can now run migration from scratch"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Cleanup failed"
+          echo "💡 Check logs above for details"

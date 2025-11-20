@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: '100000'
+      cleanup_before_migrate:
+        description: '⚠️ DANGER: Delete all data and checkpoints before migration'
+        required: false
+        type: boolean
+        default: false
       use_remote:
         description: 'Use remote D1 database (--remote flag)'
         required: true
@@ -110,6 +115,32 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
         run: npm run validate
+
+      - name: ⚠️ Cleanup D1 Data - coordinate_speed_new
+        if: ${{ github.event.inputs.cleanup_before_migrate == 'true' && github.event.inputs.migrate_data == 'true' && (github.event.inputs.table_name == 'coordinate_speed_new' || github.event.inputs.table_name == 'all') }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: coordinate_speed_new
+        run: |
+          echo "⚠️ WARNING: Cleaning up D1 data for coordinate_speed_new..."
+          echo "This will delete all existing data and checkpoints!"
+          echo ""
+          npm run cleanup
+
+      - name: ⚠️ Cleanup D1 Data - camera_locations
+        if: ${{ github.event.inputs.cleanup_before_migrate == 'true' && github.event.inputs.migrate_data == 'true' && (github.event.inputs.table_name == 'camera_locations' || github.event.inputs.table_name == 'all') }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          TABLE_NAME: camera_locations
+        run: |
+          echo "⚠️ WARNING: Cleaning up D1 data for camera_locations..."
+          echo "This will delete all existing data and checkpoints!"
+          echo ""
+          npm run cleanup:camera
 
       - name: Migrate Data - coordinate_speed_new
         if: ${{ github.event.inputs.migrate_data == 'true' && (github.event.inputs.table_name == 'coordinate_speed_new' || github.event.inputs.table_name == 'all') }}

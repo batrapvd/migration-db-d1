@@ -12,7 +12,10 @@
     "migrate:resume": "TABLE_NAME=coordinate_speed_new node migrate-with-resume.js",
     "migrate:resume:camera": "TABLE_NAME=camera_locations node migrate-with-resume.js",
     "migrate:resume:all": "npm run migrate:resume && npm run migrate:resume:camera",
-    "setup-db": "node setup-d1-schema.js"
+    "setup-db": "node setup-d1-schema.js",
+    "cleanup": "TABLE_NAME=coordinate_speed_new node cleanup-d1.js",
+    "cleanup:camera": "TABLE_NAME=camera_locations node cleanup-d1.js",
+    "cleanup:all": "npm run cleanup && npm run cleanup:camera"
   },
   "keywords": [
     "postgresql",

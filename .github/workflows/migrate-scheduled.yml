@@ -27,6 +27,9 @@ on:
 
 jobs:
   migrate-scheduled:
+    # DISABLED: This workflow has been replaced by migrate-wrangler.yml
+    # To re-enable, change 'if: false' to 'if: true'
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 330  # 5 hours 30 minutes max runtime
 
